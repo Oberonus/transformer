@@ -59,11 +59,8 @@ class Transformer
     public function transformCollection($items)
     {
         $this->createConvertersManager();
-        if (is_callable([$items, 'toArray'])) {
-            $items = $items->toArray();
-        }
 
-        return array_map([$this, 'transform'], $items);
+        return array_map([$this, 'transform'], $this->itemToArray($items));
     }
 
     /**
@@ -78,17 +75,11 @@ class Transformer
     {
         $this->createConvertersManager();
         $this->beforeTransform($item);
+        $arrayedItem = $this->itemToArray($item);
 
-        if (is_callable([$item, 'toArray'])) {
-            $item = $item->toArray();
-        }
-
-        $results = [];
-        foreach ($this->fields as $field) {
-            $this->processField($item, $field, $results);
-        }
-
-        return $results;
+        return array_reduce($this->fields, function ($results, $field) use ($arrayedItem) {
+            return $this->processField($arrayedItem, $field, $results);
+        }, []);
     }
 
     /**
@@ -97,17 +88,19 @@ class Transformer
      * @param array $item Array of fields (keys) and values
      * @param string $field Field name to transform
      * @param array $results Resulting array with transformed fields
+     * @return array
      */
-    protected function processField(array $item, $field, array &$results)
+    protected function processField(array $item, $field, array $results)
     {
-        if (!array_key_exists($field, $item))
-            return;
+        if (array_key_exists($field, $item)) {
+            $keyValue = $this->hasConverters($field)
+                ? $this->performConversion($field, $item[$field])
+                : [$field, $item[$field]];
 
-        $keyValue = $this->hasConverters($field)
-            ? $this->performConversion($field, $item[$field])
-            : [$field, $item[$field]];
+            $results[$keyValue[0]] = $keyValue[1];
+        }
 
-        $results[$keyValue[0]] = $keyValue[1];
+        return $results;
     }
 
     /**
@@ -151,5 +144,24 @@ class Transformer
     {
         if ($this->convertersManager instanceof ConvertersManager) return;
         $this->convertersManager = new ConvertersManager($this);
+    }
+
+    /**
+     * Makes an array from transforming item
+     *
+     * @param $item
+     * @return mixed
+     */
+    protected function itemToArray($item)
+    {
+        if (is_array($item)) {
+            return $item;
+        }
+
+        if (is_callable([$item, 'toArray'])) {
+            return $item->toArray();
+        }
+
+        throw new \InvalidArgumentException('Transforming item should be an array or be able to return all fields as array on toArray() method');
     }
 }
